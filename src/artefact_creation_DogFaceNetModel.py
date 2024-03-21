@@ -7,11 +7,15 @@ import tensorflow as tf
 from sklearn.neighbors import KNeighborsClassifier
 import joblib
 from glob import glob
+from scipy.spatial.distance import euclidean, cosine
+from collections import defaultdict
+import cv2
+
 
 OUTPUT_PATH="D:/Bah/Documentos/ESTUDO/UFRR/TCC/TCC-Codes/DogIdentificationCNN/artefacts"
 
-PRETRAINED_MODEL = "D:/Bah/Documentos/ESTUDO/UFRR/TCC/TCC-Codes/DogIdentificationCNN/2019.07.29.dogfacenet.99.h5"
-INDEXING_PATH = "D:/Bah/Documentos/ESTUDO/UFRR/TCC/TCC-Codes/Datasets/Images_meus_dogs/Train/*/*.jpg"
+PRETRAINED_MODEL = "D:/Bah/Documentos/ESTUDO/UFRR/TCC/TCC-Codes/DogIdentificationCNN/2019.07.29.dogfacenet.290.h5"
+INDEXING_PATH = "D:/Bah/Documentos/ESTUDO/UFRR/TCC/TCC-Codes/Datasets/Images_meus_dogs - Copia/Train/*/*.jpg"
 
 
 alpha = 0.3
@@ -43,54 +47,51 @@ def gen_index_labels():
     label_=le.fit_transform(label_index)
     return indexed_files,label_index,le,label_
 
-model = tf.keras.models.load_model(PRETRAINED_MODEL, custom_objects={'triplet': triplet, 'triplet_acc': triplet_acc})
+def generate():
+    model = tf.keras.models.load_model(PRETRAINED_MODEL, custom_objects={'triplet': triplet, 'triplet_acc': triplet_acc})
+    indexed_files,label_index,le,label_=gen_index_labels()
+    embeddings = []
+    labels = []
 
-# Inicializar o LabelEncoder
-# le = LabelEncoder()
+    # Iterar sobre as pastas de indivíduos
+    for index, image_path in enumerate(indexed_files):
+        # Carregar a imagem e pré-processá-la
+        img = Image.open(image_path).convert('RGB').resize((224, 224))
+        img_array = np.array(img) / 255.0  # Normalização
+        img_array = np.expand_dims(img_array, axis=0)  # Adicionar dimensão de batch
+        # Obter a label do indivíduo
+        label = label_index[index]
+        # Obter o embedding da imagem usando o modelo
+        embedding = model.predict(img_array)
+        # Adicionar o embedding e a label às listas
+        embeddings.append(embedding)
+        labels.append(label)
 
-indexed_files,label_index,le,label_=gen_index_labels()
+    # Converter listas para arrays numpy
+    embeddings = np.array(embeddings)
+    labels = np.array(labels)
+    return embeddings, labels
 
-# print(indexed_files)
-# print("###########")
-# print(label_index)
-# print("###########")
-# print(le)
-# print("###########")
-# print(label_)
+embeddings, labels =  generate()
 
-# Listas para armazenar embeddings e labels
-embeddings = []
-labels = []
+# Criar o diretório de saída se não existir
+os.makedirs(OUTPUT_PATH, exist_ok=True)
 
-# Iterar sobre as pastas de indivíduos
-for index, image_path in enumerate(indexed_files):
-    # Carregar a imagem e pré-processá-la
-    img = Image.open(image_path).convert('RGB').resize((224, 224))
-    img_array = np.array(img) / 255.0  # Normalização
-    img_array = np.expand_dims(img_array, axis=0)  # Adicionar dimensão de batch
-    # Obter a label do indivíduo
-    label = label_index[index]
-    # Obter o embedding da imagem usando o modelo
-    embedding = model.predict(img_array)
-    # Adicionar o embedding e a label às listas
-    embeddings.append(embedding)
-    labels.append(label)
+# Salvar os embeddings em um arquivo usando joblib.dump
+joblib.dump(embeddings, os.path.join(OUTPUT_PATH, "embeddings.pkl"))
 
-# Converter listas para arrays numpy
-embeddings = np.array(embeddings)
-labels = np.array(labels)
-
-# print(labels)
-# print(label_)
-
-# Exibir os embeddings e labels
-# for i in range(len(embeddings)):
-#     print(f"Embedding da imagem {labels[i]}: {embeddings[i]}")
+# Salvar as labels em um arquivo usando joblib.dump
+joblib.dump(labels, os.path.join(OUTPUT_PATH, "labels.pkl"))
 
 
-knn=KNeighborsClassifier(3)
-flat_embeddings = [emb.flatten() for emb in embeddings]
-knn.fit(flat_embeddings, np.array(label_))
-os.makedirs(OUTPUT_PATH,exist_ok=True)
-joblib.dump(knn,os.path.join(OUTPUT_PATH,"knn.pkl"))
-joblib.dump(le,os.path.join(OUTPUT_PATH,"lEncoder.pkl"))
+
+
+# knn=KNeighborsClassifier(4)
+# flat_embeddings = [emb.flatten() for emb in embeddings]
+# knn.fit(flat_embeddings, np.array(label_))
+# os.makedirs(OUTPUT_PATH,exist_ok=True)
+# joblib.dump(knn,os.path.join(OUTPUT_PATH,"knn.pkl"))
+# joblib.dump(le,os.path.join(OUTPUT_PATH,"lEncoder.pkl"))
+
+# print("Classes do modelo:", knn.classes_)
+# print("Métrica efetiva:", knn.effective_metric_)
